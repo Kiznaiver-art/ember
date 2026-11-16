@@ -41,11 +41,11 @@ void dump(const Memory& mem) {
             //                   Hint: a Byte sent to std::cout prints as a
             //                   character already - that is the whole joke of
             //                   Lab 1. Right now every byte looks unprintable.
-            if (is_printable(b)) {
-                std::cout << '.';
-            } else {
-                std::cout << '.';
-            }
+          if (is_printable(b)) {
+    std::cout << b;
+} else {
+    std::cout << '.';
+}
         }
 
         std::cout << "|\n";
