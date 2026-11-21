@@ -106,7 +106,42 @@ cpu.mem = &mem;
 } else if (cmd == "regs") {
     dump_regs(cpu);
 } else if (cmd == "step") {
-    step(cpu);} else if (cmd == "alu") {
+            step(cpu);
+    } else if (cmd == "run") {
+        int steps = 0;
+        while (!cpu.halted && steps < 100000) {
+            step(cpu);
+            ++steps;
+        }
+        if (!cpu.halted) {
+            std::cout << "\nrun stopped after " << steps << " steps (limit)\n";
+        } else {
+            std::cout << "\n[" << steps << " steps]\n";
+        }
+    } else if (cmd == "set16") {
+        std::string a, v;
+        long addr = 0, value = 0;
+        if (!(words >> a) || !(words >> v) || !parse_number(a, addr) || !parse_number(v, value)) {
+            std::cout << "usage: set16 <addr> <value>\n";
+        } else if (addr < 0) {
+            std::cout << "address must not be negative\n";
+        } else if (value < 0 || value > 65535) {
+            std::cout << "a 16-bit value is 0..65535, got " << value << '\n';
+        } else if (!set16(mem, (std::size_t)addr, (std::uint16_t)value)) {
+            std::cout << "set16 needs two cells inside 0.." << MEM_SIZE - 1 << '\n';
+        }
+    } else if (cmd == "get16") {
+        std::string a;
+        long addr = 0;
+        if (!(words >> a) || !parse_number(a, addr)) {
+            std::cout << "usage: get16 <addr>\n";
+        } else if (addr < 0 || (std::size_t)addr + 1 >= MEM_SIZE) {
+            std::cout << "get16 needs two cells inside 0.." << MEM_SIZE - 1 << '\n';
+        } else {
+            std::uint16_t v = get16(mem, (std::size_t)addr);
+            std::cout << v << "  0x" << std::hex << v << std::dec << '\n';
+        }
+    } else if (cmd == "alu") {
     std::string op, sa, sb;
     long x = 0, y = 0;
     if (!(words >> op) || !(words >> sa) || !parse_number(sa, x) || x < 0 || x > 255) {

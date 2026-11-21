@@ -23,13 +23,13 @@ struct Flags {
 };
 
 struct CPU {
-    Memory* mem = nullptr;   // где лежит коробка
-    std::uint16_t pc = 0;    // адрес СЛЕДУЮЩЕЙ инструкции
+    Memory* mem = nullptr;  // где лежит коробка
+    std::uint16_t pc = 0;   // адрес СЛЕДУЮЩЕЙ инструкции
+    std::uint16_t h = 0;    // адресный регистр: держит адрес, а не значение
     Byte a = 0;
     Byte b = 0;
     Flags f;
-    bool halted = false;     // после HALT следующие step отказывают
+    bool halted = false;    // после HALT следующие step отказывают
 };
-
 void step(CPU& cpu);
 void dump_regs(const CPU& cpu);
