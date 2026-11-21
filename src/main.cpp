@@ -33,9 +33,16 @@ static void print_help() {
               << "  get <addr>        show one byte four ways\n"
               << "  set <addr> <val>  write one byte (dec or 0x hex)\n"
               << "  help              this list\n"
+              << "  find <lo> <hi> <byte>  first address in [lo,hi) holding byte\n"
               << "  quit              leave\n";
 }
-
+// Линейный поиск: первый i в [lo, hi), где mem[i] == needle; промах -> hi.
+static std::uint16_t find(const Memory& mem, std::uint16_t lo, std::uint16_t hi, Byte needle) {
+    for (std::uint16_t i = lo; i < hi; ++i) {
+        if (mem_get(mem, i) == needle) return i;
+    }
+    return hi;
+}
 int main() {
     Memory mem;  // 4096 bytes, on the stack, zeroed by the {} in memory.hpp
 CPU cpu;
@@ -141,6 +148,24 @@ cpu.mem = &mem;
             std::uint16_t v = get16(mem, (std::size_t)addr);
             std::cout << v << "  0x" << std::hex << v << std::dec << '\n';
         }
+            } else if (cmd == "find") {
+        std::string a, b, n;
+        long lo = 0, hi = 0, needle = 0;
+        if (!(words >> a) || !(words >> b) || !(words >> n) ||
+            !parse_number(a, lo) || !parse_number(b, hi) || !parse_number(n, needle)) {
+            std::cout << "usage: find <lo> <hi> <byte>\n";
+        } else if (lo < 0 || hi < lo || (std::size_t)hi > MEM_SIZE) {
+            std::cout << "range must satisfy 0 <= lo <= hi <= " << MEM_SIZE << '\n';
+        } else if (needle < 0 || needle > 255) {
+            std::cout << "a byte is 0..255, got " << needle << '\n';
+        } else {
+            std::uint16_t r = find(mem, (std::uint16_t)lo, (std::uint16_t)hi, (Byte)needle);
+            if (r == hi) {
+                std::cout << "not found\n";
+            } else {
+                std::cout << "found at " << r << "  0x" << std::hex << r << std::dec << '\n';
+            }
+        }
     } else if (cmd == "alu") {
     std::string op, sa, sb;
     long x = 0, y = 0;
@@ -178,3 +203,7 @@ cpu.mem = &mem;
 
     return 0;  // 0 means "success" to the operating system
 }
+
+
+
+
