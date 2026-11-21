@@ -1,0 +1,35 @@
+// cpu.hpp — ДАНО.
+#pragma once
+#include <cstdint>
+#include "memory.hpp"
+
+const Byte OP_HALT = 0x00;
+const Byte OP_NOP  = 0x01;
+const Byte OP_ADD  = 0x10;
+const Byte OP_SUB  = 0x11;
+const Byte OP_AND  = 0x12;
+const Byte OP_OR   = 0x13;
+const Byte OP_XOR  = 0x14;
+const Byte OP_NOT  = 0x15;
+const Byte OP_SHL  = 0x16;
+const Byte OP_SHR  = 0x17;
+const Byte OP_INC  = 0x18;
+const Byte OP_DEC  = 0x19;
+
+struct Flags {
+    bool z = false;   // результат нулевой
+    bool n = false;   // старший бит результата
+    bool c = false;   // бит, вышедший за границу восьми
+};
+
+struct CPU {
+    Memory* mem = nullptr;   // где лежит коробка
+    std::uint16_t pc = 0;    // адрес СЛЕДУЮЩЕЙ инструкции
+    Byte a = 0;
+    Byte b = 0;
+    Flags f;
+    bool halted = false;     // после HALT следующие step отказывают
+};
+
+void step(CPU& cpu);
+void dump_regs(const CPU& cpu);

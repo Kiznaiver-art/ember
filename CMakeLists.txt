@@ -9,8 +9,9 @@ add_executable(ember
     src/main.cpp
     src/memory.cpp
     src/dump.cpp
-)
-
+    src/alu.cpp
+    src/cpu.hpp
+    src/cpu.cpp)
 target_compile_options(ember PRIVATE -Wall -Wextra -Werror)
 
 # Sanitizers on Debug builds. They are extra checks compiled *into* the binary:

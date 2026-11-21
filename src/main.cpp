@@ -9,9 +9,10 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-
+#include "cpu.hpp"
 #include "dump.hpp"
 #include "memory.hpp"
+#include "alu.hpp"
 
 // Turn a word into a number. Accepts decimal (65) and hex (0x41).
 // Returns false if the word is not a number at all.
@@ -37,7 +38,8 @@ static void print_help() {
 
 int main() {
     Memory mem;  // 4096 bytes, on the stack, zeroed by the {} in memory.hpp
-
+CPU cpu;
+cpu.mem = &mem;
     std::cout << "ember 0.1 - 4096 bytes of memory you can see. Type `help`.\n";
 
     std::string line;
@@ -88,7 +90,52 @@ int main() {
             } else if (!mem_set(mem, (std::size_t)addr, (Byte)value)) {
                 std::cout << "address " << addr << " is outside 0.." << MEM_SIZE - 1
                           << '\n';
-            }
+            }} else if (cmd == "reg") {
+    std::string r, v;
+    long value = 0;
+    if (!(words >> r) || !(words >> v) || !parse_number(v, value) || value < 0 ||
+        value > 255) {
+        std::cout << "usage: reg <a|b> <0..255>\n";
+    } else if (r == "a") {
+        cpu.a = (Byte)value;
+    } else if (r == "b") {
+        cpu.b = (Byte)value;
+    } else {
+        std::cout << "unknown register: " << r << '\n';
+    }
+} else if (cmd == "regs") {
+    dump_regs(cpu);
+} else if (cmd == "step") {
+    step(cpu);} else if (cmd == "alu") {
+    std::string op, sa, sb;
+    long x = 0, y = 0;
+    if (!(words >> op) || !(words >> sa) || !parse_number(sa, x) || x < 0 || x > 255) {
+        std::cout << "usage: alu <op> <a> [b]\n";
+    } else if ((op == "add" || op == "sub" || op == "and" || op == "or" || op == "xor") &&
+               (!(words >> sb) || !parse_number(sb, y) || y < 0 || y > 255)) {
+        std::cout << "usage: alu " << op << " <a> <b>\n";
+    } else {
+        Flags f;
+        Byte r = 0, ua = (Byte)x, ub = (Byte)y;
+        bool known = true;
+        if      (op == "add") r = alu_add(ua, ub, f);
+        else if (op == "sub") r = alu_sub(ua, ub, f);
+        else if (op == "and") r = alu_and(ua, ub, f);
+        else if (op == "or")  r = alu_or (ua, ub, f);
+        else if (op == "xor") r = alu_xor(ua, ub, f);
+        else if (op == "not") r = alu_not(ua, f);
+        else if (op == "shl") r = alu_shl(ua, f);
+        else if (op == "shr") r = alu_shr(ua, f);
+        else if (op == "inc") r = alu_inc(ua, f);
+        else if (op == "dec") r = alu_dec(ua, f);
+        else known = false;
+        if (!known) {
+            std::cout << "unknown alu op: " << op << '\n';
+        } else {
+            std::cout << "result=" << (int)r << "  Z=" << f.z << " N=" << f.n
+                      << " C=" << f.c << '\n';
+        }
+    }
         } else {
             std::cout << "unknown command: " << cmd << " (try `help`)\n";
         }
