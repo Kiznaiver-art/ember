@@ -4,33 +4,44 @@
 #include <iomanip>
 #include "screen.hpp"
 
-// Опкод - это два поля: старший полубайт (группа) и младший (индекс).
-struct Decoded { Byte group; Byte index; };
+// Опкоды ember (ISA.uk.md). enum class: имена не протекают наружу,
+// а в число он сам не превращается - нужен явный static_cast.
+enum class Op : Byte {
+    HALT = 0x00, NOP = 0x01, OUT = 0x02, OUTN = 0x03,
 
-static Decoded decode(Byte op) {
-    Decoded d;
-    d.group = (op >> 4) & 0x0F;   // сдвиг убирает младшие 4 бита
-    d.index = op & 0x0F;          // маска оставляет только младшие 4 бита
-    return d;
-}
+    ADD = 0x10, SUB = 0x11, AND = 0x12, OR = 0x13, XOR = 0x14,
+    NOT = 0x15, SHL = 0x16, SHR = 0x17, INC = 0x18, DEC = 0x19,
+    CMP = 0x1A,
+
+    LOADI_A = 0x20, LOADI_B = 0x21,
+    LOAD_A = 0x22, LOAD_B = 0x23,
+    STORE_A = 0x24, STORE_B = 0x25,
+    MOV_A_B = 0x26, MOV_B_A = 0x27,
+    LOADH = 0x28, LOAD_A_H = 0x29, STORE_H_A = 0x2A,
+    INCH = 0x2B, DECH = 0x2C, HLOW = 0x2D,
+
+    JMP = 0x30, JZ = 0x31, JNZ = 0x32, JC = 0x33, JNC = 0x34,
+
+    CLS = 0x40, PLOT = 0x41, SHOW = 0x43
+};
 
 // Размер инструкции в байтах (ISA.uk.md). 0 = такого опкода в ISA нет.
-static std::size_t op_size(Byte op) {
-    switch (op) {
-    case 0x00: case 0x01: case 0x02: case 0x03:                 // HALT NOP OUT OUTN
-    case 0x10: case 0x11: case 0x12: case 0x13: case 0x14:      // ADD SUB AND OR XOR
-    case 0x15: case 0x16: case 0x17: case 0x18: case 0x19:      // NOT SHL SHR INC DEC
-    case 0x1A:                                                  // CMP
-    case 0x26: case 0x27:                                       // MOV
-    case 0x29: case 0x2A: case 0x2B: case 0x2C:                 // [H], INCH, DECH
-    case 0x2D:                                                  // HLOW
-    case 0x40: case 0x41: case 0x43:                            // CLS PLOT SHOW
+static std::size_t op_size(Byte raw) {
+    switch (static_cast<Op>(raw)) {
+    case Op::HALT: case Op::NOP: case Op::OUT: case Op::OUTN:
+    case Op::ADD: case Op::SUB: case Op::AND: case Op::OR: case Op::XOR:
+    case Op::NOT: case Op::SHL: case Op::SHR: case Op::INC: case Op::DEC:
+    case Op::CMP:
+    case Op::MOV_A_B: case Op::MOV_B_A:
+    case Op::LOAD_A_H: case Op::STORE_H_A: case Op::INCH: case Op::DECH:
+    case Op::HLOW:
+    case Op::CLS: case Op::PLOT: case Op::SHOW:
         return 1;
-    case 0x20: case 0x21:                                       // LOADI
+    case Op::LOADI_A: case Op::LOADI_B:
         return 2;
-    case 0x22: case 0x23: case 0x24: case 0x25:                 // LOAD/STORE [addr16]
-    case 0x28:                                                  // LOADH
-    case 0x30: case 0x31: case 0x32: case 0x33: case 0x34:      // JMP JZ JNZ JC JNC
+    case Op::LOAD_A: case Op::LOAD_B: case Op::STORE_A: case Op::STORE_B:
+    case Op::LOADH:
+    case Op::JMP: case Op::JZ: case Op::JNZ: case Op::JC: case Op::JNC:
         return 3;
     default:
         return 0;
@@ -48,11 +59,11 @@ void step(CPU& cpu) {
         return;
     }
 
-    Byte op = mem_get(*cpu.mem, cpu.pc);
-    std::size_t size = op_size(op);
+    Byte raw = mem_get(*cpu.mem, cpu.pc);
+    std::size_t size = op_size(raw);
     if (size == 0) {
         std::cout << "error: unknown opcode 0x" << std::hex << std::uppercase
-                  << std::setw(2) << std::setfill('0') << (int)op
+                  << std::setw(2) << std::setfill('0') << (int)raw
                   << std::dec << std::setfill(' ')
                   << " at address " << cpu.pc << "\n";
         cpu.halted = true;
@@ -64,8 +75,6 @@ void step(CPU& cpu) {
         return;
     }
 
-    Decoded d = decode(op);
-
     // Стрибок: сработал -> PC = адрес из операнда (размер НЕ добавляем);
     // не сработал -> обычный PC += 3.
     auto jump_if = [&](bool take) {
@@ -73,75 +82,53 @@ void step(CPU& cpu) {
         else      cpu.pc += 3;
     };
 
-    switch (d.group) {
-    case 0x0:                                                   // управление
-        switch (d.index) {
-        case 0x0: cpu.halted = true; cpu.pc += 1; break;                // HALT
-        case 0x1: cpu.pc += 1; break;                                   // NOP
-        case 0x2: std::cout << (char)cpu.a; cpu.pc += 1; break;         // OUT
-        case 0x3: std::cout << (int)cpu.a << ' '; cpu.pc += 1; break;   // OUTN
-        default: break;
-        }
-        break;
+    switch (static_cast<Op>(raw)) {
+    // --- управление и вывод ---
+    case Op::HALT: cpu.halted = true; cpu.pc += 1; break;
+    case Op::NOP:  cpu.pc += 1; break;
+    case Op::OUT:  std::cout << (char)cpu.a; cpu.pc += 1; break;
+    case Op::OUTN: std::cout << (int)cpu.a << ' '; cpu.pc += 1; break;
 
-    case 0x1:                                                   // ALU
-        switch (d.index) {
-        case 0x0: cpu.a = alu_add(cpu.a, cpu.b, cpu.f); break;  // ADD
-        case 0x1: cpu.a = alu_sub(cpu.a, cpu.b, cpu.f); break;  // SUB
-        case 0x2: cpu.a = alu_and(cpu.a, cpu.b, cpu.f); break;  // AND
-        case 0x3: cpu.a = alu_or (cpu.a, cpu.b, cpu.f); break;  // OR
-        case 0x4: cpu.a = alu_xor(cpu.a, cpu.b, cpu.f); break;  // XOR
-        case 0x5: cpu.a = alu_not(cpu.a, cpu.f);        break;  // NOT
-        case 0x6: cpu.a = alu_shl(cpu.a, cpu.f);        break;  // SHL
-        case 0x7: cpu.a = alu_shr(cpu.a, cpu.f);        break;  // SHR
-        case 0x8: cpu.a = alu_inc(cpu.a, cpu.f);        break;  // INC
-        case 0x9: cpu.a = alu_dec(cpu.a, cpu.f);        break;  // DEC
-        case 0xA: (void)alu_sub(cpu.a, cpu.b, cpu.f);   break;  // CMP: флаги как у SUB, результат выбрасываем
-        default: break;
-        }
-        cpu.pc += 1;
-        break;
+    // --- ALU ---
+    case Op::ADD: cpu.a = alu_add(cpu.a, cpu.b, cpu.f); cpu.pc += 1; break;
+    case Op::SUB: cpu.a = alu_sub(cpu.a, cpu.b, cpu.f); cpu.pc += 1; break;
+    case Op::AND: cpu.a = alu_and(cpu.a, cpu.b, cpu.f); cpu.pc += 1; break;
+    case Op::OR:  cpu.a = alu_or (cpu.a, cpu.b, cpu.f); cpu.pc += 1; break;
+    case Op::XOR: cpu.a = alu_xor(cpu.a, cpu.b, cpu.f); cpu.pc += 1; break;
+    case Op::NOT: cpu.a = alu_not(cpu.a, cpu.f);        cpu.pc += 1; break;
+    case Op::SHL: cpu.a = alu_shl(cpu.a, cpu.f);        cpu.pc += 1; break;
+    case Op::SHR: cpu.a = alu_shr(cpu.a, cpu.f);        cpu.pc += 1; break;
+    case Op::INC: cpu.a = alu_inc(cpu.a, cpu.f);        cpu.pc += 1; break;
+    case Op::DEC: cpu.a = alu_dec(cpu.a, cpu.f);        cpu.pc += 1; break;
+    case Op::CMP: (void)alu_sub(cpu.a, cpu.b, cpu.f);   cpu.pc += 1; break;  // флаги как у SUB, результат выбрасываем
 
-    case 0x2:                                                   // пересылка данных (флаги не трогаем)
-        switch (d.index) {
-        case 0x0: cpu.a = mem_get(*cpu.mem, cpu.pc + 1); cpu.pc += 2; break;                // LOADI A, imm8
-        case 0x1: cpu.b = mem_get(*cpu.mem, cpu.pc + 1); cpu.pc += 2; break;                // LOADI B, imm8
-        case 0x2: cpu.a = mem_get(*cpu.mem, get16(*cpu.mem, cpu.pc + 1)); cpu.pc += 3; break; // LOAD A, [addr16]
-        case 0x3: cpu.b = mem_get(*cpu.mem, get16(*cpu.mem, cpu.pc + 1)); cpu.pc += 3; break; // LOAD B, [addr16]
-        case 0x4: mem_set(*cpu.mem, get16(*cpu.mem, cpu.pc + 1), cpu.a); cpu.pc += 3; break;  // STORE [addr16], A
-        case 0x5: mem_set(*cpu.mem, get16(*cpu.mem, cpu.pc + 1), cpu.b); cpu.pc += 3; break;  // STORE [addr16], B
-        case 0x6: cpu.a = cpu.b; cpu.pc += 1; break;                                        // MOV A, B
-        case 0x7: cpu.b = cpu.a; cpu.pc += 1; break;                                        // MOV B, A
-        case 0x8: cpu.h = get16(*cpu.mem, cpu.pc + 1); cpu.pc += 3; break;                  // LOADH H, imm16
-        case 0x9: cpu.a = mem_get(*cpu.mem, cpu.h); cpu.pc += 1; break;                     // LOAD A, [H]
-        case 0xA: mem_set(*cpu.mem, cpu.h, cpu.a); cpu.pc += 1; break;                      // STORE [H], A
-        case 0xB: cpu.h += 1; cpu.pc += 1; break;                                           // INCH
-        case 0xC: cpu.h -= 1; cpu.pc += 1; break;                                           // DECH
-        case 0xD: cpu.a = cpu.h & 0xFF; cpu.pc += 1; break;                                 // HLOW
-        default: break;
-        }
-        break;
+    // --- пересылка данных (флаги не трогаем) ---
+    case Op::LOADI_A: cpu.a = mem_get(*cpu.mem, cpu.pc + 1); cpu.pc += 2; break;
+    case Op::LOADI_B: cpu.b = mem_get(*cpu.mem, cpu.pc + 1); cpu.pc += 2; break;
+    case Op::LOAD_A:  cpu.a = mem_get(*cpu.mem, get16(*cpu.mem, cpu.pc + 1)); cpu.pc += 3; break;
+    case Op::LOAD_B:  cpu.b = mem_get(*cpu.mem, get16(*cpu.mem, cpu.pc + 1)); cpu.pc += 3; break;
+    case Op::STORE_A: mem_set(*cpu.mem, get16(*cpu.mem, cpu.pc + 1), cpu.a); cpu.pc += 3; break;
+    case Op::STORE_B: mem_set(*cpu.mem, get16(*cpu.mem, cpu.pc + 1), cpu.b); cpu.pc += 3; break;
+    case Op::MOV_A_B: cpu.a = cpu.b; cpu.pc += 1; break;
+    case Op::MOV_B_A: cpu.b = cpu.a; cpu.pc += 1; break;
+    case Op::LOADH:   cpu.h = get16(*cpu.mem, cpu.pc + 1); cpu.pc += 3; break;
+    case Op::LOAD_A_H:  cpu.a = mem_get(*cpu.mem, cpu.h); cpu.pc += 1; break;
+    case Op::STORE_H_A: mem_set(*cpu.mem, cpu.h, cpu.a); cpu.pc += 1; break;
+    case Op::INCH: cpu.h += 1; cpu.pc += 1; break;
+    case Op::DECH: cpu.h -= 1; cpu.pc += 1; break;
+    case Op::HLOW: cpu.a = cpu.h & 0xFF; cpu.pc += 1; break;
 
-    case 0x3:                                                   // стрибки
-        switch (d.index) {
-        case 0x0: jump_if(true);     break;   // JMP
-        case 0x1: jump_if(cpu.f.z);  break;   // JZ
-        case 0x2: jump_if(!cpu.f.z); break;   // JNZ
-        case 0x3: jump_if(cpu.f.c);  break;   // JC  (opt)
-        case 0x4: jump_if(!cpu.f.c); break;   // JNC (opt)
-        default: break;
-        }
-        break;
+    // --- стрибки ---
+    case Op::JMP: jump_if(true);     break;
+    case Op::JZ:  jump_if(cpu.f.z);  break;
+    case Op::JNZ: jump_if(!cpu.f.z); break;
+    case Op::JC:  jump_if(cpu.f.c);  break;   // opt
+    case Op::JNC: jump_if(!cpu.f.c); break;   // opt
 
-    case 0x4:                                                   // экран
-        switch (d.index) {
-        case 0x0: clear_screen(*cpu.mem); break;                        // CLS
-        case 0x1: cpu.f.c = !plot(*cpu.mem, cpu.a, cpu.b); break;       // PLOT: x=A, y=B; вне экрана -> C=1
-        case 0x3: show(*cpu.mem); break;                                // SHOW
-        default: break;
-        }
-        cpu.pc += 1;
-        break;
+    // --- экран ---
+    case Op::CLS:  clear_screen(*cpu.mem); cpu.pc += 1; break;
+    case Op::PLOT: cpu.f.c = !plot(*cpu.mem, cpu.a, cpu.b); cpu.pc += 1; break;  // x=A, y=B; вне экрана -> C=1
+    case Op::SHOW: show(*cpu.mem); cpu.pc += 1; break;
 
     default:
         break;   // сюда не попасть: op_size уже отсёк неизвестные опкоды
